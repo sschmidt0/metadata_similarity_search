@@ -65,8 +65,6 @@ def get_data():
 def send_query(query):
     print(f"Query sent: {query}")
 
-def send_metadata(metadata):
-    return metadata.get("author", "Unknown")
 
 def format_results(docs, metadatas):
     if not docs:
@@ -92,14 +90,40 @@ def format_results(docs, metadatas):
 
     return pd.DataFrame(rows)
 
-def main(query, metadata):
+def build_where_filter(genre, language, min_year, min_rating, award_winner_only):
+    conditions = []
+    if genre and genre != "All":
+        conditions.append({"genre": {"$eq": genre}})
+    if language and language != "All":
+        conditions.append({"language": {"$eq": language}})
+    if min_year and min_year > 1800:
+        conditions.append({"year": {"$gte": int(min_year)}})
+    if min_rating and min_rating > 1.0:
+        conditions.append({"rating": {"$gte": float(round(min_rating, 1))}})
+    if award_winner_only:
+        conditions.append({"award_winner": {"$eq": True}})
+
+    if not conditions:
+        return None
+    if len(conditions) == 1:
+        return conditions[0]
+    return {"$and": conditions}
+
+def main(query, genre, language, min_year, min_rating, award_winner_only):
     _ensure_collection()
+    query = query or ""
     send_query(query)
-    where_filter = {"author": metadata} if metadata.strip() else None
+    where_filter = build_where_filter(genre, language, min_year, min_rating, award_winner_only)
+
+    matching_count = len(collection.get(where=where_filter)["ids"]) if where_filter else collection.count()
+    n_results = min(5, matching_count)
+    if n_results == 0:
+        return pd.DataFrame()
+
     try:
         results = collection.query(
             query_texts=[query],
-            n_results=5,
+            n_results=n_results,
             where=where_filter,
         )
         docs = results.get("documents", [[]])[0]
@@ -110,4 +134,4 @@ def main(query, metadata):
         return pd.DataFrame()
 
 if __name__ == "__main__":
-    main("What is the meaning of life?", "Alice")
+    main("What is the meaning of life?", "All", "All", 1800, 1.0, False)
